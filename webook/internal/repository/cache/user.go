@@ -71,10 +71,11 @@ func NewUserCache(cmd redis.Cmdable) UserCache {
 }
 
 // 一定不要自己去初始化你需要的东西，让外面传进来
-//func NewUserCacheV1(addr string) *RedisUserCache {
-//	cmd := redis.NewClient(&redis.Options{Addr: addr})
-//	return &RedisUserCache{
-//		cmd:        cmd,
-//		expiration: time.Minute * 15,
+//
+//	func NewUserCacheV1(addr string) *RedisUserCache {
+//		cmd := redis.NewClient(&redis.Options{Addr: addr})
+//		return &RedisUserCache{
+//			cmd:        cmd,
+//			expiration: time.Minute * 15,
+//		}
 //	}
-//}
