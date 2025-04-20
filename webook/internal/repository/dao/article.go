@@ -10,13 +10,13 @@ import (
 )
 
 type ArticleDAO interface {
-	Insert(ctx context.Context, art Article) (int64, error)
-	UpdateById(ctx context.Context, entity Article) error
-	Sync(ctx context.Context, entity Article) (int64, error)
-	SyncStatus(ctx context.Context, uid int64, id int64, status uint8) error
-	GetByAuthor(ctx context.Context, uid int64, offset int, limit int) ([]Article, error)
-	GetById(ctx context.Context, id int64) (Article, error)
-	GetPubById(ctx context.Context, id int64) (PublishedArticle, error)
+	Insert(ctx context.Context, art Article) (int64, error)                               // Edit
+	UpdateById(ctx context.Context, entity Article) error                                 // Edit
+	Sync(ctx context.Context, entity Article) (int64, error)                              // Publish
+	SyncStatus(ctx context.Context, uid int64, id int64, status uint8) error              // Withdraw
+	GetByAuthor(ctx context.Context, uid int64, offset int, limit int) ([]Article, error) // List
+	GetById(ctx context.Context, id int64) (Article, error)                               // Detail
+	GetPubById(ctx context.Context, id int64) (PublishedArticle, error)                   // PubDetail
 }
 
 type ArticleGORMDAO struct {
@@ -53,7 +53,7 @@ func (a *ArticleGORMDAO) SyncStatus(ctx context.Context, uid int64, id int64, st
 	now := time.Now().UnixMilli()
 	return a.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Model(&Article{}).
-			Where("id = ? and author_id = ?", uid, id).
+			Where("id = ? and author_id = ?", id, uid).
 			Updates(map[string]any{
 				"utime":  now,
 				"status": status,
@@ -65,7 +65,7 @@ func (a *ArticleGORMDAO) SyncStatus(ctx context.Context, uid int64, id int64, st
 			return errors.New("ID 不对或者创作者不对")
 		}
 		return tx.Model(&PublishedArticle{}).
-			Where("id = ?", uid).
+			Where("id = ?", id).
 			Updates(map[string]any{
 				"utime":  now,
 				"status": status,
@@ -111,50 +111,49 @@ func (a *ArticleGORMDAO) Sync(ctx context.Context, art Article) (int64, error) {
 	return id, err
 }
 
-func (a *ArticleGORMDAO) SyncV1(ctx context.Context, art Article) (int64, error) {
-	tx := a.db.WithContext(ctx).Begin()
-	if tx.Error != nil {
-		return 0, tx.Error
-	}
-	// 防止后面业务panic
-	defer tx.Rollback()
-
-	var (
-		id  = art.Id
-		err error
-	)
-	dao := NewArticleGORMDAO(tx)
-	if id > 0 {
-		err = dao.UpdateById(ctx, art)
-	} else {
-		id, err = dao.Insert(ctx, art)
-	}
-	if err != nil {
-		return 0, err
-	}
-	art.Id = id
-	now := time.Now().UnixMilli()
-	pubArt := PublishedArticle(art)
-	pubArt.Ctime = now
-	pubArt.Utime = now
-	err = tx.Clauses(clause.OnConflict{
-		// 对MySQL不起效，但是可以兼容别的方言
-		// INSERT xxx ON DUPLICATE KEY SET `title`=?
-		// 别的方言：
-		// sqlite INSERT XXX ON CONFLICT DO UPDATES WHERE
-		Columns: []clause.Column{{Name: "id"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{
-			"title":   pubArt.Title,
-			"content": pubArt.Content,
-			"utime":   now,
-		}),
-	}).Create(&pubArt).Error
-	if err != nil {
-		return 0, err
-	}
-	tx.Commit()
-	return id, nil
-}
+// func (a *ArticleGORMDAO) SyncV1(ctx context.Context, art Article) (int64, error) {
+// 	tx := a.db.WithContext(ctx).Begin()
+// 	if tx.Error != nil {
+// 		return 0, tx.Error
+// 	}
+// 	// 防止后面业务panic
+// 	defer tx.Rollback()
+// 	var (
+// 		id  = art.Id
+// 		err error
+// 	)
+// 	dao := NewArticleGORMDAO(tx)
+// 	if id > 0 {
+// 		err = dao.UpdateById(ctx, art)
+// 	} else {
+// 		id, err = dao.Insert(ctx, art)
+// 	}
+// 	if err != nil {
+// 		return 0, err
+// 	}
+// 	art.Id = id
+// 	now := time.Now().UnixMilli()
+// 	pubArt := PublishedArticle(art)
+// 	pubArt.Ctime = now
+// 	pubArt.Utime = now
+// 	err = tx.Clauses(clause.OnConflict{
+// 		// 对MySQL不起效，但是可以兼容别的方言
+// 		// INSERT xxx ON DUPLICATE KEY SET `title`=?
+// 		// 别的方言：
+// 		// sqlite INSERT XXX ON CONFLICT DO UPDATES WHERE
+// 		Columns: []clause.Column{{Name: "id"}},
+// 		DoUpdates: clause.Assignments(map[string]interface{}{
+// 			"title":   pubArt.Title,
+// 			"content": pubArt.Content,
+// 			"utime":   now,
+// 		}),
+// 	}).Create(&pubArt).Error
+// 	if err != nil {
+// 		return 0, err
+// 	}
+// 	tx.Commit()
+// 	return id, nil
+// }
 
 func (a *ArticleGORMDAO) UpdateById(ctx context.Context, art Article) error {
 	now := time.Now().UnixMilli()

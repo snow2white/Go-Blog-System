@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -13,10 +14,22 @@ import (
 func main() {
 	initViperV1()
 	initLogger()
-	server := InitWebServer()
+	// server := InitWebServer()
+	app := InitWebServer()
+	fmt.Println("len(app.consumers) ", len(app.consumers))
+	for _, c := range app.consumers {
+		err := c.Start()
+		if err != nil {
+			panic(err)
+		}
+	}
+	server := app.server
 	server.GET("/hello", func(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "hello，启动成功了！")
 	})
+	//addr := viper.Get("addr")
+	//server.Run(":8081")
+	//server.Run(addr)
 	server.Run(":8080")
 }
 func initLogger() {

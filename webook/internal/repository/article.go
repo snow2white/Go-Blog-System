@@ -9,6 +9,7 @@ import (
 	"basic-go/webook/internal/repository/dao"
 
 	"github.com/ecodeclub/ekit/slice"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -28,10 +29,8 @@ type CachedArticleRepository struct {
 	// 因为如果你直接访问 UserDAO，你就绕开了 repository，
 	// repository 一般都有一些缓存机制
 	userRepo UserRepository
-
-	readerDAO dao.ArticleReaderDAO
-	authorDAO dao.ArticleAuthorDAO
-
+	// readerDAO dao.ArticleReaderDAO
+	// authorDAO dao.ArticleAuthorDAO
 	db *gorm.DB
 }
 
@@ -42,15 +41,6 @@ func NewCachedArticleRepository(dao dao.ArticleDAO,
 		dao:      dao,
 		cache:    cache,
 		userRepo: userRepo,
-	}
-}
-
-func NewCachedArticleRepositoryV2(
-	readerDAO dao.ArticleReaderDAO,
-	authorDAO dao.ArticleAuthorDAO) *CachedArticleRepository {
-	return &CachedArticleRepository{
-		readerDAO: readerDAO,
-		authorDAO: authorDAO,
 	}
 }
 
@@ -122,7 +112,6 @@ func (c *CachedArticleRepository) GetByAuthor(ctx context.Context, uid int64, of
 	res := slice.Map[dao.Article, domain.Article](arts, func(idx int, src dao.Article) domain.Article {
 		return c.toDomain(src)
 	})
-
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
@@ -130,6 +119,8 @@ func (c *CachedArticleRepository) GetByAuthor(ctx context.Context, uid int64, of
 			// 缓存回写失败，不一定是大问题，但有可能是大问题
 			err = c.cache.SetFirstPage(ctx, uid, res)
 			if err != nil {
+				// zap.l
+				zap.L().Error("回写缓存失败")
 				// 记录日志
 				// 我需要监控这里
 			}
@@ -162,7 +153,8 @@ func (c *CachedArticleRepository) Sync(ctx context.Context, art domain.Article) 
 			// 也要记录日志
 		}
 	}
-	// 在这里尝试，设置缓存
+	// 在这里尝试，设置缓存，开启协程缓存设置操作通常是 I/O 操作，耗时较长。通过将缓存设置放在协程中，主线程可以继续执行其他任务，而不需要等待缓存设置完成。
+	// 协程中的错误处理不会影响主线程的执行。即使缓存设置失败，也不会影响主业务逻辑的正常返回。
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
@@ -181,59 +173,6 @@ func (c *CachedArticleRepository) Sync(ctx context.Context, art domain.Article) 
 			// 记录日志
 		}
 	}()
-	return id, err
-}
-
-func (c *CachedArticleRepository) SyncV2(ctx context.Context, art domain.Article) (int64, error) {
-	tx := c.db.WithContext(ctx).Begin()
-	if tx.Error != nil {
-		return 0, tx.Error
-	}
-	// 防止后面业务panic
-	defer tx.Rollback()
-
-	authorDAO := dao.NewArticleGORMAuthorDAO(tx)
-	readerDAO := dao.NewArticleGORMReaderDAO(tx)
-
-	artn := c.toEntity(art)
-	var (
-		id  = art.Id
-		err error
-	)
-	if id > 0 {
-		err = authorDAO.Update(ctx, artn)
-	} else {
-		id, err = authorDAO.Create(ctx, artn)
-	}
-	if err != nil {
-		return 0, err
-	}
-	artn.Id = id
-	err = readerDAO.UpsertV2(ctx, dao.PublishedArticle(artn))
-	if err != nil {
-		return 0, err
-	}
-	tx.Commit()
-	return id, nil
-
-}
-
-func (c *CachedArticleRepository) SyncV1(ctx context.Context, art domain.Article) (int64, error) {
-	artn := c.toEntity(art)
-	var (
-		id  = art.Id
-		err error
-	)
-	if id > 0 {
-		err = c.authorDAO.Update(ctx, artn)
-	} else {
-		id, err = c.authorDAO.Create(ctx, artn)
-	}
-	if err != nil {
-		return 0, err
-	}
-	artn.Id = id
-	err = c.readerDAO.Upsert(ctx, artn)
 	return id, err
 }
 
@@ -284,9 +223,25 @@ func (c *CachedArticleRepository) toDomain(art dao.Article) domain.Article {
 		Status: domain.ArticleStatus(art.Status),
 	}
 }
+func (c *CachedArticleRepository) toDomain1(art dao.PublishedArticle) domain.Article {
+	return domain.Article{
+		Id:      art.Id,
+		Title:   art.Title,
+		Content: art.Content,
+		Author: domain.Author{
+			// 这里有一个错误
+			Id: art.AuthorId,
+		},
+		Ctime:  time.UnixMilli(art.Ctime),
+		Utime:  time.UnixMilli(art.Utime),
+		Status: domain.ArticleStatus(art.Status),
+	}
+}
 
+// 负责存最新的一页
 func (c *CachedArticleRepository) preCache(ctx context.Context, arts []domain.Article) {
 	const size = 1024 * 1024
+	// zap.L().Debug("preCache", zap.Int("len", len(arts)))
 	if len(arts) > 0 && len(arts[0].Content) < size {
 		err := c.cache.Set(ctx, arts[0])
 		if err != nil {
@@ -294,3 +249,67 @@ func (c *CachedArticleRepository) preCache(ctx context.Context, arts []domain.Ar
 		}
 	}
 }
+
+// func NewCachedArticleRepositoryV2(
+// 	readerDAO dao.ArticleReaderDAO,
+// 	authorDAO dao.ArticleAuthorDAO) *CachedArticleRepository {
+// 	return &CachedArticleRepository{
+// 		readerDAO: readerDAO,
+// 		authorDAO: authorDAO,
+// 	}
+// }
+
+// 事务实现
+// func (c *CachedArticleRepository) SyncV2(ctx context.Context, art domain.Article) (int64, error) {
+// 	tx := c.db.WithContext(ctx).Begin()
+// 	if tx.Error != nil {
+// 		return 0, tx.Error
+// 	}
+// 	// 防止后面业务panic
+// 	defer tx.Rollback()
+
+// 	authorDAO := dao.NewArticleGORMAuthorDAO(tx)
+// 	readerDAO := dao.NewArticleGORMReaderDAO(tx)
+
+// 	artn := c.toEntity(art)
+// 	var (
+// 		id  = art.Id
+// 		err error
+// 	)
+// 	if id > 0 {
+// 		err = authorDAO.Update(ctx, artn)
+// 	} else {
+// 		id, err = authorDAO.Create(ctx, artn)
+// 	}
+// 	if err != nil {
+// 		return 0, err
+// 	}
+// 	artn.Id = id
+// 	err = readerDAO.UpsertV2(ctx, dao.PublishedArticle(artn))
+// 	if err != nil {
+// 		return 0, err
+// 	}
+// 	tx.Commit()
+// 	return id, nil
+
+// }
+
+// 非事务实现
+// func (c *CachedArticleRepository) SyncV1(ctx context.Context, art domain.Article) (int64, error) {
+// 	artn := c.toEntity(art)
+// 	var (
+// 		id  = art.Id
+// 		err error
+// 	)
+// 	if id > 0 {
+// 		err = c.authorDAO.Update(ctx, artn)
+// 	} else {
+// 		id, err = c.authorDAO.Create(ctx, artn)
+// 	}
+// 	if err != nil {
+// 		return 0, err
+// 	}
+// 	artn.Id = id
+// 	err = c.readerDAO.Upsert(ctx, artn)
+// 	return id, err
+// }

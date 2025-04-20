@@ -84,7 +84,7 @@ func (h *RedisJWTHandler) SetJWTToken(ctx *gin.Context, uid int64, ssid string) 
 		Ssid:      ssid,
 		UserAgent: ctx.GetHeader("User-Agent"),
 		RegisteredClaims: jwt.RegisteredClaims{
-			// 1 分钟过期
+			// 30 分钟过期
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 30)),
 		},
 	}

@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
+	"time"
 
 	ijwt "basic-go/webook/internal/web/jwt"
 
@@ -67,17 +69,17 @@ func (m *LoginJWTMiddlewareBuilder) CheckLogin() gin.HandlerFunc {
 		// 	return
 		// }
 
-		// expireTime := uc.ExpiresAt
-		// // 剩余过期时间 < 50s 就要刷新
-		// if expireTime.Sub(time.Now()) < time.Second*50 {
-		// 	uc.ExpiresAt = jwt.NewNumericDate(time.Now().Add(time.Minute * 5))
-		// 	tokenStr, err = token.SignedString(ijwt.JWTKey)
-		// 	ctx.Header("x-jwt-token", tokenStr)
-		// 	if err != nil {
-		// 		// 这边不要中断，因为仅仅是过期时间没有刷新，但是用户是登录了的
-		// 		log.Println(err)
-		// 	}
-		// }
+		expireTime := uc.ExpiresAt
+		// 剩余过期时间 < 50s 就要刷新
+		if expireTime.Sub(time.Now()) < time.Second*50 {
+			uc.ExpiresAt = jwt.NewNumericDate(time.Now().Add(time.Minute * 5))
+			tokenStr, err = token.SignedString(ijwt.JWTKey)
+			ctx.Header("x-jwt-token", tokenStr)
+			if err != nil {
+				// 这边不要中断，因为仅仅是过期时间没有刷新，但是用户是登录了的
+				log.Println(err)
+			}
+		}
 
 		ctx.Set("user", uc)
 

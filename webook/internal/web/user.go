@@ -169,7 +169,6 @@ func (h *UserHandler) LoginSMS(ctx *gin.Context) {
 	if err := ctx.Bind(&req); err != nil {
 		return
 	}
-
 	ok, err := h.codeSvc.Verify(ctx, bizLogin, req.Phone, req.Code)
 	if err != nil {
 		ctx.JSON(http.StatusOK, Result{
@@ -283,7 +282,7 @@ func (h *UserHandler) LoginJWT(ctx *gin.Context) {
 	default:
 		ctx.String(http.StatusOK, "系统错误")
 	}
-	fmt.Println("LoginJWT:  ", ctx)
+	// fmt.Println("LoginJWT:  ", ctx)
 }
 
 func (h *UserHandler) LoginSess(ctx *gin.Context) {

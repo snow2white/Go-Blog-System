@@ -106,7 +106,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -135,10 +134,11 @@ func (l *LogMiddlewareBuilder) AllowRespBody() *LogMiddlewareBuilder {
 }
 
 func (l *LogMiddlewareBuilder) maskSensitiveData(data map[string]interface{}) {
-	for key, value := range data {
+	for key, _ := range data {
 		switch key {
 		case "Email":
-			data[key] = strings.ReplaceAll(value.(string), "@", "[at]")
+			data[key] = "******"
+			// data[key] = strings.ReplaceAll(value.(string), "@", "[at]")
 		case "Password":
 			data[key] = "******"
 		}

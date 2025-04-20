@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"fmt"
 
 	"basic-go/webook/internal/service/sms"
 
@@ -32,11 +31,11 @@ func (s *SMSService) Send(ctx context.Context, tplToken string, args []string, n
 	var claims SMSClaims // 定义一个 SMSClaims 类型的变量来存储解析后的声明
 
 	// 解析 JWT token 并提取其中的声明
-	fmt.Println("tplToken:", tplToken)
-	token, err := jwt.ParseWithClaims(tplToken, &claims, func(token *jwt.Token) (interface{}, error) {
+	// fmt.Println("tplToken:", tplToken)
+	_, err := jwt.ParseWithClaims(tplToken, &claims, func(token *jwt.Token) (interface{}, error) {
 		return s.key, nil // 使用提供的密钥解析 JWT token
 	})
-	fmt.Println(token)
+	// fmt.Println(token)
 	if err != nil {
 		// 如果解析失败，返回错误
 		return err

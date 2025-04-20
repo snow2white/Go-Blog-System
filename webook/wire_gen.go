@@ -7,6 +7,7 @@
 package main
 
 import (
+	"basic-go/webook/internal/events/article"
 	"basic-go/webook/internal/repository"
 	"basic-go/webook/internal/repository/cache"
 	"basic-go/webook/internal/repository/dao"
@@ -15,12 +16,12 @@ import (
 	"basic-go/webook/internal/web"
 	"basic-go/webook/internal/web/jwt"
 	"basic-go/webook/ioc"
-	"github.com/gin-gonic/gin"
+	"github.com/google/wire"
 )
 
 // Injectors from wire.go:
 
-func InitWebServer() *gin.Engine {
+func InitWebServer() *App {
 	cmdable := ioc.InitRedis()
 	handler := jwt.NewRedisJWTHandler(cmdable)
 	loggerV1 := ioc.InitLogger()
@@ -39,10 +40,30 @@ func InitWebServer() *gin.Engine {
 	articleDAO := dao.NewArticleGORMDAO(db)
 	articleCache := cache.NewArticleRedisCache(cmdable)
 	articleRepository := repository.NewCachedArticleRepository(articleDAO, userRepository, articleCache)
-	articleService := service.NewArticleService(articleRepository)
-	articleHandler := web.NewArticleHandler(loggerV1, articleService)
+	
+	client := ioc.InitSaramaClient()
+	syncProducer := ioc.InitSyncProducer(client)
+	producer := article.NewSaramaSyncProducer(syncProducer)
+	articleService := service.NewArticleService(articleRepository, producer)
+
+	interactiveDAO := dao.NewGORMInteractiveDAO(db)
+	interactiveCache := cache.NewInteractiveRedisCache(cmdable)
+	interactiveRepository := repository.NewCachedInteractiveRepository(interactiveDAO, loggerV1, interactiveCache)
+	interactiveService := service.NewInteractiveService(interactiveRepository)
+	articleHandler := web.NewArticleHandler(loggerV1, articleService, interactiveService)
 	wechatService := ioc.InitWechatService(loggerV1)
 	oAuth2WechatHandler := web.NewOAuth2WechatHandler(wechatService, handler, userService)
 	engine := ioc.InitWebServer(v, userHandler, articleHandler, oAuth2WechatHandler)
-	return engine
+	
+	interactiveReadEventConsumer := article.NewInteractiveReadEventConsumer(interactiveRepository, client, loggerV1)
+	v2 := ioc.InitConsumers(interactiveReadEventConsumer)
+	app := &App{
+		server:    engine,
+		consumers: v2,
+	}
+	return app
 }
+
+// wire.go:
+
+var interactiveSvcSet = wire.NewSet(dao.NewGORMInteractiveDAO, cache.NewInteractiveRedisCache, repository.NewCachedInteractiveRepository, service.NewInteractiveService)

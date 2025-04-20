@@ -89,6 +89,7 @@ func (a *ArticleRedisCache) SetFirstPage(ctx context.Context, uid int64, arts []
 	}
 	key := a.firstKey(uid)
 	val, err := json.Marshal(arts)
+	// zap.L().Debug("SetFirstPage", zap.String("key", key), zap.String("val", string(val)))
 	if err != nil {
 		return err
 	}
